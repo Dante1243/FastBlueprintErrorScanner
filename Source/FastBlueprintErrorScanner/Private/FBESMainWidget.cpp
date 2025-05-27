@@ -29,7 +29,7 @@ void UFBESMainWidget::NativeConstruct()
 
 void UFBESMainWidget::OnClickedButtonRun()
 {
-	const FStringAssetReference WidgetRef("/FastBlueprintErrorScanner/FastBlueprintErrorScannerProgress");
+	const FSoftObjectPath WidgetRef("/FastBlueprintErrorScanner/FastBlueprintErrorScannerProgress");
 	UEditorUtilityWidgetBlueprint* WidgetBlueprint = Cast<UEditorUtilityWidgetBlueprint>(WidgetRef.TryLoad());
 	UFBESProgressWidget* ProgressWidget = Cast<UFBESProgressWidget>(GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>()->SpawnAndRegisterTabAndGetID(WidgetBlueprint, ProgressWidgetTabId));
 	const bool bMultiThread = CheckBox_MultiThread->GetCheckedState() == ECheckBoxState::Checked;

@@ -45,7 +45,7 @@ void FastBlueprintErrorScannerModule::AddMenuExtension(FMenuBuilder& MenuBuilder
 
 void FastBlueprintErrorScannerModule::OpenFastBlueprintErrorScanner()
 {
-	const FStringAssetReference WidgetRef("/FastBlueprintErrorScanner/FastBlueprintErrorScanner");
+	const FSoftObjectPath WidgetRef("/FastBlueprintErrorScanner/FastBlueprintErrorScanner");
 	UEditorUtilityWidgetBlueprint* WidgetBP = Cast<UEditorUtilityWidgetBlueprint>(WidgetRef.TryLoad());
 	WidgetBP->SetRegistrationName("Fast Blueprint Error Scanner");
 	GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>()->SpawnAndRegisterTab(WidgetBP);

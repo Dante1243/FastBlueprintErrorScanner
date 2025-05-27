@@ -29,11 +29,11 @@ class FASTBLUEPRINTERRORSCANNER_API UFBESListViewItemWidget : public UEditorUtil
 
 public:
 	UPROPERTY(meta = (BindWidget))
-	UWidgetSwitcher* Switcher_State;
+	TObjectPtr<UWidgetSwitcher> Switcher_State;
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_AssetPath;
+	TObjectPtr<UTextBlock> Text_AssetPath;
 	UPROPERTY(meta = (BindWidget))
-	UButton* Button_OpenAsset;
+	TObjectPtr<UButton> Button_OpenAsset;
 
 protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;

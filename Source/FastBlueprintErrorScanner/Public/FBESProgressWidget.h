@@ -18,21 +18,21 @@ class FASTBLUEPRINTERRORSCANNER_API UFBESProgressWidget : public UEditorUtilityW
 
 public:
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_ProgressPercent;
+	TObjectPtr<UTextBlock> Text_ProgressPercent;
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_CountPass;
+	TObjectPtr<UTextBlock> Text_CountPass;
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_CountError;
+	TObjectPtr<UTextBlock> Text_CountError;
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_EclipseTime;
+	TObjectPtr<UTextBlock> Text_EclipseTime;
 	UPROPERTY(meta = (BindWidget))
-	UButton* Button_Close;
+	TObjectPtr<UButton> Button_Close;
 	UPROPERTY(meta = (BindWidget))
-	UProgressBar* ProgressBar_Percent;
+	TObjectPtr<UProgressBar> ProgressBar_Percent;
 	UPROPERTY(meta = (BindWidget))
-	UCircularThrobber* CircularThrobber_Circle;
+	TObjectPtr<UCircularThrobber> CircularThrobber_Circle;
 	UPROPERTY(meta = (BindWidget))
-	UTextBlock* Text_Title;
+	TObjectPtr<UTextBlock> Text_Title;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -55,13 +55,17 @@ public:
 	void Run();
 
 protected:
+	
 	int RunProcessCount = 0;
 	int DoneProcessCount = 0;
+	
 	FDateTime StartTime;
+	
 	TArray<FFBESCompileResult> ListViewData;
 	TMap<int, FFBESBlueprintCompileProgressData> ProgressDataMap;
 	FOnCloseWidgetDelegate OnCloseWidgetDelegate;
 	FTimerHandle TimerHandle;
+	
 	bool bRunAsMultiThread = true;
 	bool bRunningRunnable = false;
 };

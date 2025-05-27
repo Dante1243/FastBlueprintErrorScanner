@@ -29,20 +29,20 @@ int32 UFastBlueprintErrorScannerCommandlet::Main(const FString& Params)
 	TArray<FAssetData> WorldAssetList;
 	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(AssetRegistryConstants::ModuleName);
 	AssetRegistryModule.Get().SearchAllAssets(true);
-	AssetRegistryModule.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetFName(), BlueprintAssetList, true);
-	AssetRegistryModule.Get().GetAssetsByClass(UWorld::StaticClass()->GetFName(), WorldAssetList, true);
+	AssetRegistryModule.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssetList, true);
+	AssetRegistryModule.Get().GetAssetsByClass(UWorld::StaticClass()->GetClassPathName(), WorldAssetList, true);
 	TotalAssetCount = BlueprintAssetList.Num() + WorldAssetList.Num();
 	UE_LOG(LogFBESCmd, Log, TEXT("TotalAssetCount : %d"), TotalAssetCount);
 
 	FDateTime Time = FDateTime::Now();
 	for (FAssetData const& Asset : BlueprintAssetList)
 	{
-		uint32 Hash = TextKeyUtil::HashString(Asset.ObjectPath.ToString());
+		uint32 Hash = TextKeyUtil::HashString(Asset.GetObjectPathString());
 		if (Hash % TotalProcess != ProcessIndex)
 		{
 			continue;
 		}
-		FString const AssetPath = Asset.ObjectPath.ToString();
+		FString const AssetPath = Asset.GetObjectPathString();
 		UBlueprint* Blueprint = Cast<UBlueprint>(StaticLoadObject(Asset.GetClass(), nullptr, *AssetPath, nullptr, LOAD_NoWarn | LOAD_DisableCompileOnLoad));
 		FFBESCompileResult CompileResult{Blueprint->GetPathName(), 0};
 		if (IsValid(Blueprint))
@@ -56,18 +56,18 @@ int32 UFastBlueprintErrorScannerCommandlet::Main(const FString& Params)
 
 	for (FAssetData const& Asset : WorldAssetList)
 	{
-		uint32 Hash = TextKeyUtil::HashString(Asset.ObjectPath.ToString());
+		uint32 Hash = TextKeyUtil::HashString(Asset.GetObjectPathString());
 		if (Hash % TotalProcess != ProcessIndex)
 		{
 			continue;
 		}
-		FString const AssetPath = Asset.ObjectPath.ToString();
+		FString const AssetPath = Asset.GetObjectPathString();
 		UObject* Object = StaticLoadObject(Asset.GetClass(), nullptr, *AssetPath, nullptr, LOAD_NoWarn | LOAD_DisableCompileOnLoad);
 		UWorld* World = Cast<UWorld>(Object);
 		FFBESCompileResult CompileResult{World->GetPathName(), 0};
 		if (IsValid(World) && IsValid(World->PersistentLevel))
 		{
-			for (UBlueprint* Blueprint : World->PersistentLevel->GetLevelBlueprints())
+			for (UBlueprint* Blueprint : World->PersistentLevel->GetLevelScriptBlueprint())
 			{
 				if (IsValid(Blueprint))
 				{

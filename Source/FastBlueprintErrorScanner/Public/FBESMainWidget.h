@@ -35,16 +35,16 @@ protected:
 
 public:
 	UPROPERTY(meta = (BindWidget))
-	UButton* Button_Run;
+	TObjectPtr<UButton> Button_Run;
 
 	UPROPERTY(meta = (BindWidget))
-	UCheckBox* CheckBox_Error;
+	TObjectPtr<UCheckBox> CheckBox_Error;
 
 	UPROPERTY(meta = (BindWidget))
-	UCheckBox* CheckBox_MultiThread;
+	TObjectPtr<UCheckBox> CheckBox_MultiThread;
 
 	UPROPERTY(meta = (BindWidget))
-	UListView* ListView_Blueprint;
+	TObjectPtr<UListView> ListView_Blueprint;
 
 protected:
 	FName ProgressWidgetTabId;
