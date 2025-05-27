@@ -5,11 +5,15 @@
 #include "FBESStruct.h"
 #include "FBESProgressWidget.generated.h"
 
+
 class UProgressBar;
 class UButton;
 class UTextBlock;
 class SWindow;
 class UCircularThrobber;
+
+DECLARE_DELEGATE_OneParam(FOnCloseWidgetDelegate, const TArray<FFBESCompileResult>&);
+
 
 UCLASS()
 class FASTBLUEPRINTERRORSCANNER_API UFBESProgressWidget : public UEditorUtilityWidget
@@ -17,6 +21,11 @@ class FASTBLUEPRINTERRORSCANNER_API UFBESProgressWidget : public UEditorUtilityW
 	GENERATED_BODY()
 
 public:
+
+	FOnCloseWidgetDelegate OnCloseWidgetDelegate;
+	FORCEINLINE void SetRunAsMultiThread(const bool bMultiThread) { bRunAsMultiThread = bMultiThread; }
+	void RunWork();
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_ProgressPercent;
 	UPROPERTY(meta = (BindWidget))
@@ -35,37 +44,26 @@ public:
 	TObjectPtr<UTextBlock> Text_Title;
 
 protected:
+	
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	void InitWidget();
-	void OnCompleteRunnable(int InError, int InProcessIndex);
-	void OnProgressRunnable(FFBESBlueprintCompileProgressData const& InData);
-	void OnCompleteRunnableAll();
-
-	UFUNCTION()
-	void OnClickedButtonClose();
 	void UpdateProgressUI();
 
-public:
-	DECLARE_DELEGATE_OneParam(FOnCloseWidgetDelegate, TArray<FFBESCompileResult> const&);
-	FOnCloseWidgetDelegate& GetOnCloseDelegate();
+	FORCEINLINE bool IsWorkFinished() const { return NumProcsRunningWork == NumProcsFinishedWork; }
+	void OnWorkComplete(const TArray<FFBESCompileResult>& Results);
+	void OnAllWorkComplete();
+	UFUNCTION()
+	void OnClickedButtonClose();
 	
-	void SetRunAsMultiThread(bool bMultiThread);
-	void Run();
+	uint16 NumProcsRunningWork = 0;
+	uint16 NumProcsFinishedWork = 0;
 
-protected:
-	
-	int RunProcessCount = 0;
-	int DoneProcessCount = 0;
+	uint64 TotalAssetsToProcess = 0;
 	
 	FDateTime StartTime;
-	
-	TArray<FFBESCompileResult> ListViewData;
-	TMap<int, FFBESBlueprintCompileProgressData> ProgressDataMap;
-	FOnCloseWidgetDelegate OnCloseWidgetDelegate;
-	FTimerHandle TimerHandle;
-	
 	bool bRunAsMultiThread = true;
-	bool bRunningRunnable = false;
+	TArray<FFBESCompileResult> ResultsData;
+	
 };

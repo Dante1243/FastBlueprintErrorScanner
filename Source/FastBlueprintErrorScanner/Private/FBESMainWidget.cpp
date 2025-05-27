@@ -34,8 +34,8 @@ void UFBESMainWidget::OnClickedButtonRun()
 	UFBESProgressWidget* ProgressWidget = Cast<UFBESProgressWidget>(GEditor->GetEditorSubsystem<UEditorUtilitySubsystem>()->SpawnAndRegisterTabAndGetID(WidgetBlueprint, ProgressWidgetTabId));
 	const bool bMultiThread = CheckBox_MultiThread->GetCheckedState() == ECheckBoxState::Checked;
 	ProgressWidget->SetRunAsMultiThread(bMultiThread);
-	ProgressWidget->GetOnCloseDelegate().BindUObject(this, &UFBESMainWidget::OnCloseProgressWidget);
-	ProgressWidget->Run();
+	ProgressWidget->OnCloseWidgetDelegate.BindUObject(this, &UFBESMainWidget::OnCloseProgressWidget);
+	ProgressWidget->RunWork();
 
 	const TSharedRef<SWindow> ModalWindow = SNew(SWindow).Title(FText::FromString(TEXT("Fast Blueprint Error Scanner"))).SizingRule(ESizingRule::Autosized).HasCloseButton(false).IsPopupWindow(true);
 	ModalWindow->SetContent(ProgressWidget->TakeWidget());

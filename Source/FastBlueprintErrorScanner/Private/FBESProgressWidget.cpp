@@ -1,7 +1,6 @@
-#include "FBESProgressWidget.h"
 
-#include "FBESRunnable.h"
-#include "JsonObjectConverter.h"
+#include "FBESProgressWidget.h"
+#include "AssetCompileChecker.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Async/Async.h"
 #include "Components/Button.h"
@@ -10,46 +9,25 @@
 #include "Components/TextBlock.h"
 #include "Misc/FileHelper.h"
 
-FString GetReportDirectory()
-{
-	return FPaths::ProjectDir() + TEXT("Saved/FastBlueprintErrorScanner");
-}
-
-FString GetReportFilePath(int InProcessIndex)
-{
-	return GetReportDirectory() / TEXT("Report_") + FString::FromInt(InProcessIndex) + TEXT(".json");
-}
 
 void UFBESProgressWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-
-	StartTime = FDateTime::Now();
-	DoneProcessCount = 0;
-	bRunningRunnable = false;
 	
 	InitWidget();
-
-	const FString Directory = GetReportDirectory();
-	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-	if (PlatformFile.DirectoryExists(*Directory))
-	{
-		PlatformFile.DeleteDirectoryRecursively(*Directory);
-	}
-	PlatformFile.CreateDirectoryTree(*Directory);
 }
 
 void UFBESProgressWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	if (bRunningRunnable)
-	{
-		UpdateProgressUI();
-	}
+
+	// may need to only do this if we arnt finished with work.
+	if (!IsWorkFinished()) UpdateProgressUI();
 }
 
 void UFBESProgressWidget::InitWidget()
 {
+	NumProcsFinishedWork = 0;
 	Text_ProgressPercent->SetText(FText::FromString(TEXT("[0%]")));
 	Text_CountPass->SetText(FText::FromString(TEXT("0")));
 	Text_CountError->SetText(FText::FromString(TEXT("0")));
@@ -61,137 +39,102 @@ void UFBESProgressWidget::InitWidget()
 	Text_Title->SetText(FText::FromString(TEXT("Scanning")));
 }
 
-void UFBESProgressWidget::OnCompleteRunnable(int InError, int InProcessIndex)
+void UFBESProgressWidget::OnWorkComplete(const TArray<FFBESCompileResult>& Results)
 {
-	AsyncTask(ENamedThreads::GameThread, [this, InProcessIndex, InError]()
+	// Called on a worker thread.
+	AsyncTask(ENamedThreads::GameThread, [this, Results]()
 	{
-		DoneProcessCount += 1;
-		const bool IsAllCompleteRunnable = DoneProcessCount >= RunProcessCount;
-		if (IsAllCompleteRunnable)
-		{
-			OnCompleteRunnableAll();
-		}
-
-		if (InError != EFBESRunnableError::Type::Ok)
-		{
-			UE_LOG(LogFBES, Error, TEXT("Error : %d"), InError);
-			return;
-		}
-
-		const FString JsonFile = GetReportFilePath(InProcessIndex);
-		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-		if (false == PlatformFile.FileExists(*JsonFile))
-		{
-			UE_LOG(LogFBES, Error, TEXT("JsonFile not found : %s"), *JsonFile);
-			return;
-		}
-
-		FString JsonContents;
-		if (false == FFileHelper::LoadFileToString(JsonContents, *JsonFile))
-		{
-			UE_LOG(LogFBES, Error, TEXT("Failed to load file : %s"), *JsonFile);
-			return;
-		}
-		TSharedPtr<FJsonObject> JsonObject;
-		TSharedRef<TJsonReader<>> JsonReader = TJsonReaderFactory<>::Create(JsonContents);
-		if (false == FJsonSerializer::Deserialize(JsonReader, JsonObject))
-		{
-			UE_LOG(LogFBES, Error, TEXT("Failed to deserialize json : %s"), *JsonFile);
-			return;
-		}
-
-		FFBESCompileResultJsonFormat JsonFormat;
-		if (false == FJsonObjectConverter::JsonObjectToUStruct(JsonObject.ToSharedRef(), FFBESCompileResultJsonFormat::StaticStruct(), &JsonFormat, 0))
-		{
-			UE_LOG(LogFBES, Error, TEXT("Failed to convert json to struct : %s"), *JsonFile);
-			return;
-		}
-
-		ListViewData.Append(MoveTemp(JsonFormat.Data));
-		UE_LOG(LogFBES, Log, TEXT("BlueprintCompileStateList.Num() : %d"), ListViewData.Num());
+		ResultsData.Append(Results);
+		NumProcsFinishedWork += 1;
+		if (IsWorkFinished()) OnAllWorkComplete();
 	});
 }
 
-void UFBESProgressWidget::OnProgressRunnable(FFBESBlueprintCompileProgressData const& InData)
+void UFBESProgressWidget::OnAllWorkComplete()
 {
-	ProgressDataMap.FindOrAdd(InData.ProcessIndex, InData) = InData;
-}
-
-void UFBESProgressWidget::OnCompleteRunnableAll()
-{
-	bRunningRunnable = false;
 	UpdateProgressUI();
-	if (TimerHandle.IsValid())
-	{
-		GetWorld()->GetTimerManager().ClearTimer(TimerHandle);
-	}
+
 	CircularThrobber_Circle->SetVisibility(ESlateVisibility::Collapsed);
-	Text_Title->SetText(FText::FromString(TEXT("Complited")));
+	Text_Title->SetText(FText::FromString("Completed"));
 	Button_Close->SetIsEnabled(true);
 }
 
 void UFBESProgressWidget::OnClickedButtonClose()
 {
-	OnCloseWidgetDelegate.ExecuteIfBound(ListViewData);
+	// ReSharper disable once CppExpressionWithoutSideEffects
+	OnCloseWidgetDelegate.ExecuteIfBound(ResultsData);
 
-	TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(TakeWidget());
-	if (Window.IsValid())
-	{
-		Window->RequestDestroyWindow();
-	}
+	const TSharedPtr<SWindow> Window = FSlateApplication::Get().FindWidgetWindow(TakeWidget());
+	if (Window.IsValid()) Window->RequestDestroyWindow();
 }
 
 void UFBESProgressWidget::UpdateProgressUI()
 {
 	const FTimespan Gap = FDateTime::Now() - StartTime;
 	Text_EclipseTime->SetText(FText::FromString(FString::Printf(TEXT("%02d:%02d"), Gap.GetMinutes(), Gap.GetSeconds())));
-
-	int PassCount = 0;
-	int ErrorCount = 0;
-	int TotalCount = 0;
-	for (auto It = ProgressDataMap.CreateIterator(); It; ++It)
+	
+	uint32 ErrorCount = 0;
+	for (const FFBESCompileResult& Result : ResultsData)
 	{
-		FFBESBlueprintCompileProgressData const& Data = It.Value();
-		PassCount += Data.PassCount;
-		ErrorCount += Data.ErrorCount;
-		TotalCount = Data.TotalCount;
+		if (Result.HasErrors()) ErrorCount++;
 	}
-	float ZeroToOne = 0;
-
-	if (TotalCount > 0)
+	const uint32 PassCount = ResultsData.Num() - ErrorCount;
+	
+	// Progress 0 - 1.
+	float NormalizedProgress = 0;
+	if (TotalAssetsToProcess > 0)
 	{
-		ZeroToOne = (float)(PassCount + ErrorCount) / (float)TotalCount;
-		ZeroToOne = FMath::Clamp(ZeroToOne, 0.0f, 1.0f);
+		NormalizedProgress = (PassCount + ErrorCount) / TotalAssetsToProcess;
+		NormalizedProgress = FMath::Clamp(NormalizedProgress, 0.0f, 1.0f);
 	}
-	const int ProgressPercent = FMath::Clamp((int)(100.0f * ZeroToOne), 0, 100);
+	const int8 ProgressPercent = FMath::Clamp(NormalizedProgress * 100.0f, 0, 100);
 
-	ProgressBar_Percent->SetPercent(ZeroToOne);
+	ProgressBar_Percent->SetPercent(NormalizedProgress);
 	Text_ProgressPercent->SetText(FText::FromString(FString::Printf(TEXT("[%d%%]"), ProgressPercent)));
 	Text_CountPass->SetText(FText::FromString(FString::FromInt(PassCount)));
 	Text_CountError->SetText(FText::FromString(FString::FromInt(ErrorCount)));
 }
 
-UFBESProgressWidget::FOnCloseWidgetDelegate& UFBESProgressWidget::GetOnCloseDelegate()
+void UFBESProgressWidget::RunWork()
 {
-	return OnCloseWidgetDelegate;
-}
+	StartTime = FDateTime::Now();
+	NumProcsRunningWork = bRunAsMultiThread ? FPlatformMisc::NumberOfCores() : 1;
+	
+	const FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(AssetRegistryConstants::ModuleName);
+	AssetRegistryModule.Get().SearchAllAssets(true);
+	
+	TArray<FAssetData> AssetsToProcess;
+	AssetRegistryModule.Get().GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), AssetsToProcess, true);
+	TotalAssetsToProcess = AssetsToProcess.Num();
 
-void UFBESProgressWidget::SetRunAsMultiThread(bool bMultiThread)
-{
-	bRunAsMultiThread = bMultiThread;
-	UE_LOG(LogFBES, Log, TEXT("bRunAsMultiThread : %d"), bRunAsMultiThread);
-}
-
-void UFBESProgressWidget::Run()
-{
-	RunProcessCount = bRunAsMultiThread ? FPlatformMisc::NumberOfCores() : 1;
-	for (int ProcessIndex = 0; ProcessIndex < RunProcessCount; ++ProcessIndex)
+	// If not multi-threaded, we can just run the all work on this one thread.
+	if (!bRunAsMultiThread)
 	{
-		FBESRunnable* Runnable = new FBESRunnable(ProcessIndex, RunProcessCount, GetReportFilePath(ProcessIndex));
-		Runnable->GetCompleteDelegate().BindUObject(this, &UFBESProgressWidget::OnCompleteRunnable);
-		Runnable->GetProgressDelegate().BindUObject(this, &UFBESProgressWidget::OnProgressRunnable);
-		bRunningRunnable = true;
+		// Run the work on a separate thread.
+		AssetCompileChecker* Checker = new AssetCompileChecker(AssetsToProcess);
+		Checker->OnCheckFinishedDelegate.BindUObject(this, &UFBESProgressWidget::OnWorkComplete);
+		Checker->Run();
+		return;
 	}
+	// If we are multi-threaded, we need to split the work into chunks.
+	const int32 ChunkSize = FMath::CeilToInt(static_cast<float>(AssetsToProcess.Num()) / NumProcsRunningWork);
+	for (int32 i = 0; i < NumProcsRunningWork; ++i)
+	{
+		const int32 StartIndex = i * ChunkSize;
+		if (StartIndex >= AssetsToProcess.Num()) break;
 
-	UE_LOG(LogFBES, Log, TEXT("RunProcessCount : %d"), RunProcessCount);
+		const int32 EndIndex = FMath::Min(StartIndex + ChunkSize, AssetsToProcess.Num());
+
+		// Slice creates a lightweight view of the data
+		TConstArrayView<FAssetData> AssetSlice = MakeArrayView(AssetsToProcess).Slice(StartIndex, EndIndex - StartIndex);
+		// Copy the slice into a TArray to pass to the thread
+		TArray<FAssetData> AssetChunk(AssetSlice);
+
+		Async(EAsyncExecution::Thread, [this, Chunk = MoveTemp(AssetChunk)]()
+		{
+			AssetCompileChecker* Checker = new AssetCompileChecker(Chunk);
+			Checker->OnCheckFinishedDelegate.BindUObject(this, &UFBESProgressWidget::OnWorkComplete);
+			Checker->Run();
+		});
+	}
 }
